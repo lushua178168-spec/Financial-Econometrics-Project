@@ -1,0 +1,458 @@
+---
+title: "Grant Aid Dashboard (IPEDS 2022–23)"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+# ---- packages ----
+library(tidyverse)
+library(readxl)
+library(maps)
+library(plotly)
+library(scales)
+data <- read_excel("data_clean.xlsx")
+names(data) <- make.names(names(data))
+us_states <- map_data("state")
+
+state_sum <- data %>%
+  group_by(State) %>%
+  summarise(avg_state_local = mean(Ave_state.local_grant, na.rm=TRUE),
+            avg_federal     = mean(Ave_fed_grant, na.rm=TRUE)) %>%
+  mutate(region = tolower(State),
+         diff_state_minus_fed = avg_state_local - avg_federal)
+
+map_df <- us_states %>% left_join(state_sum, by="region")
+
+data_long <- data %>%
+  select(State, Grad_rate, Pro_pell,
+         Pell = Ave_Pell_grant,
+         `other federal grant aid` = Ave_fed_grant,
+         `state/local grant aid`   = Ave_state.local_grant) %>%
+  pivot_longer(cols = c(Pell, `other federal grant aid`, `state/local grant aid`),
+               names_to = "AidType", values_to = "AidAmount")
+
+gap_df <- data %>% mutate(grant_gap = Ave_fed_grant - Ave_state.local_grant)
+
+theme_set(theme_minimal(base_size = 16))
+```
+
+Description{data-orientation=rows}
+===================================== 
+
+Column
+-----------------------------------------------------------------------
+
+### Grant Amounts by Aid Type
+```{r}
+lvl <- c("other federal grant aid","Pell","state/local grant aid")
+
+data_long <- data_long %>% mutate(AidType = fct_relevel(AidType, intersect(lvl, levels(AidType))))
+
+med_tbl <- data_long %>%
+  group_by(AidType) %>%
+  summarise(med = median(AidAmount, na.rm = TRUE), .groups = "drop") %>%
+  mutate(lab = dollar(med))
+
+p <- ggplot(
+  data_long,
+  aes(AidType, AidAmount, fill = AidType,
+      text = paste0(
+        "Aid type: ", AidType, "<br>",
+        "Amount: ", dollar(AidAmount)
+      ))
+) +
+  geom_boxplot(color = "black") +
+  geom_text(data = med_tbl, aes(x = AidType, y =  med * 1.05, label = lab),
+            position = position_nudge(x = 0.43),
+            vjust = 5, fontface = "bold", size = 4, inherit.aes = FALSE) +
+  scale_fill_manual(values = c(
+    "other federal grant aid" = "#fb6a4a",
+    "Pell grant aid"          = "#31a354",
+    "state/local grant aid"   = "#6baed6"
+  )) +
+  scale_y_continuous(labels = dollar, name = "Grant Amount ($)") +
+  labs(
+    title = "State/Local Grants Lag Behind Other Federal and Pell Aid in Average Amounts",
+    caption = "Data source: Colleges cored 2022–23 PP and IPEDS 2022–23"
+  ) +
+  theme_minimal(base_size = 12) +
+  theme(axis.title.x = element_blank(), legend.position = "none")
+
+gp <- ggplotly(p, tooltip = "text")
+text_traces <- which(sapply(gp$x$data, `[[`, "mode") == "text")
+if (length(text_traces)) gp <- style(gp, hoverinfo = "skip", traces = text_traces)
+gp
+```
+
+
+### Comparison of Graduation Rate and Pell Graduation Rate
+```{r}
+PELL_COL <- "pell_grad_rate"  
+
+stopifnot(PELL_COL %in% names(data))
+
+df_box <- bind_rows(
+  transmute(data,
+            Group = "Overall Graduation Rate",
+            Rate  = Grad_rate),
+  transmute(data,
+            Group = "Pell Student Graduation Rate",
+            Rate  = .data[[PELL_COL]])
+)
+
+
+df_box <- mutate(df_box,
+                 Group = factor(Group,
+                                levels = c("Overall Graduation Rate",
+                                           "Pell Student Graduation Rate")))
+meds <- df_box %>%
+  group_by(Group) %>%
+  summarise(med = median(Rate, na.rm = TRUE), .groups = "drop") %>%
+  mutate(lab = number(med, accuracy = 0.01))
+
+
+p_box <- ggplot(
+  df_box,
+  aes(Group, Rate, fill = Group,
+      text = paste0(Group, "<br>Rate: ", percent(Rate, accuracy = 0.1)))
+) +
+  geom_boxplot(color = "black") +
+  geom_text(data = meds, aes(Group, med, label = lab),
+            vjust = -0.6, fontface = "bold", 
+            size = 5, position = position_nudge(x = 0.43),inherit.aes = FALSE) +
+  scale_y_continuous(labels = percent, name = "Graduation Rate") +
+  scale_fill_manual(values = c("#fb6a4a", "#17a2b8")) +
+  labs(title = "Similar Graduation Rates for Overall and Pell Grant Students ",
+       caption = "Data source: Colleges cored 2022–23 PP and IPEDS 2022–23") +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "none", axis.title.x = element_blank())
+
+ggplotly(p_box, tooltip = "text")
+
+
+```
+
+Column
+-----------------------------------------------------------------------
+### Correlation Between Types of Grant Aid
+```{r}
+grants <- data %>%
+  transmute(
+    `State/Local Grant`   = Ave_state.local_grant,
+    `Other Federal Grant` = Ave_fed_grant,
+    `Pell Grant`          = Ave_Pell_grant
+  )
+
+cm <- cor(grants, use = "pairwise.complete.obs")
+
+
+corr_long <- as.data.frame(cm) %>%
+  tibble::rownames_to_column("row") %>%
+  pivot_longer(-row, names_to = "col", values_to = "corr")
+
+
+pairs_keep <- tibble::tribble(
+  ~row,                  ~col,
+  "State/Local Grant",   "Other Federal Grant",
+  "State/Local Grant",   "Pell Grant",
+  "Other Federal Grant", "Pell Grant"
+)
+
+corr_2x2 <- corr_long %>%
+  inner_join(pairs_keep, by = c("row","col")) %>%
+  mutate(
+    row = factor(row, levels = c("State/Local Grant", "Other Federal Grant")),
+    col = factor(col, levels = c("Other Federal Grant", "Pell Grant"))
+  )
+
+p_corr <- ggplot(
+  corr_2x2,
+  aes(col, row, fill = corr,
+      text = paste0(row, " vs ", col, "<br>Corr: ", sprintf("%.2f", corr)))
+) +
+  geom_tile(color = "white", width = .96, height = .96) +
+  geom_text(aes(label = sprintf("%.2f", corr)), size = 10) +
+  scale_fill_gradient2("Corr", limits = c(-1, 1),
+                       low = "#d73027", mid = "white", high = "#1a9850",
+                       na.value = "white") +
+  coord_equal() +
+  labs(title = "High Relashionship Between Other Federal Grant Aid And Pell Grant Aid",
+       caption = "Data source: Colleges cored 2022–23 PP and IPEDS 2022–23") +
+  theme_minimal(base_size = 13) +
+  theme(axis.title = element_blank())
+
+ggplotly(p_corr, tooltip = "text")
+```
+
+
+Distribution{data-orientation=rows}
+===================================== 
+### Distribution Between Different Types of Grant Aid
+
+```{r}
+library(RColorBrewer)
+
+
+p <- ggplot(
+  data,
+  aes(
+    Ave_state.local_grant,
+    Ave_fed_grant,
+    size = Grad_rate,
+    color = Ave_Pell_grant,
+    text = paste0(
+      "Average amount of State/Local: $", round(Ave_state.local_grant,0), "<br>",
+      "Average amount of Other Federal: $", round(Ave_fed_grant,0), "<br>",
+      "Average amount of Pell: $", round(Ave_Pell_grant,0), "<br>",
+      "Graduation rate: ", scales::percent(Grad_rate, accuracy = 0.1)
+    )
+  )
+) +
+  geom_point(alpha = 0.35) +
+  scale_color_gradientn(
+    colours = brewer.pal(9, "RdYlGn"),
+    name = "Average amount of \nPell grant aid($)",
+    na.value = "white"
+  ) +
+  scale_size_continuous(range = c(1.8, 9), name = "Graduation Rate") +
+  labs(
+    title="Higher Pell Grants Tend to Accompany Larger Federal Aid",
+    x = "Average amount of state/local grant aid($)",
+    y = "Average amount of other federal grant aid($)",
+    caption = "Data source: Colleges cored 2022–23 PP and IPEDS 2022–23"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(plot.caption = element_text(hjust = 0))
+
+ggplotly(p, tooltip = "text")
+
+
+```
+
+Map{data-orientation=rows}
+===================================== 
+
+Row
+------- 
+
+### Average State/Local Grant Aid by State
+```{r}
+
+state_abbr_df <- tibble::tibble(
+  region = tolower(state.name),
+  abbr   = state.abb
+)
+
+
+centers <- map_df %>%
+  dplyr::group_by(region) %>%
+  dplyr::summarise(
+    long = mean(range(long)),
+    lat  = mean(range(lat)),
+    .groups = "drop"
+  ) %>%
+  dplyr::left_join(state_abbr_df, by = "region") %>%
+  dplyr::filter(!is.na(abbr))
+
+
+map1 <- ggplot(map_df, aes(long, lat, group = group, fill = avg_state_local)) +
+  geom_polygon(
+    color = "white", linewidth = .2,
+    aes(text = paste0(
+      "State: ", tools::toTitleCase(region), "<br>",
+      "Average State and Local Grant: ", scales::dollar(avg_state_local)
+    ))
+  ) +
+  coord_fixed(1.3) +
+  scale_fill_gradient("State/Local Grant", low = "#ffffcc", high = "#006837",
+                      labels = scales::dollar_format(), na.value = "grey90") +
+  labs(title = "Geographic Distribution of Average State/Local Grant Amounts",
+       caption = "Data source: IPEDS") +
+  theme_void() + 
+  theme(legend.position = "bottom") +
+  geom_text(data = centers, aes(x = long, y = lat, label = abbr),
+            inherit.aes = FALSE, size = 3, color = "black")
+
+gp <- ggplotly(map1, tooltip = "text")
+
+
+text_traces <- which(sapply(gp$x$data, `[[`, "mode") == "text")
+if (length(text_traces)) {
+  gp <- style(gp, hoverinfo = "skip", traces = text_traces)
+}
+
+gp <- gp %>% layout(legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.08))
+gp
+
+
+```
+
+Row
+------- 
+
+### Difference: State/Local − Federal
+
+```{r}
+
+library(dplyr)
+library(plotly)
+library(stringr)  
+
+map_df <- map_df %>%
+  mutate(
+    tooltip = paste0(
+      "State: ", str_to_title(region), "<br>",
+      "State - Federal: ",
+      ifelse(is.na(diff_state_minus_fed), "No data", dollar(diff_state_minus_fed))
+    ),
+    tooltip = enc2utf8(tooltip)   
+  )
+
+
+map2 <- ggplot(map_df, aes(long, lat, group = group, fill = diff_state_minus_fed)) +
+  geom_polygon(color = "white", linewidth = .2, aes(text = tooltip)) +
+  coord_fixed(1.3) +
+  scale_fill_gradient2(
+    name = "Difference: State/Local – Federal",
+    low = "#d73027", mid = "white", high = "#1a9850", midpoint = 0,
+    labels = dollar_format(), na.value = "grey90"
+  ) +
+  labs(title = "State-Level Difference Between State/Local and Federal Grant Amounts",
+       caption = "Data source: IPEDS") +
+  theme_void() + theme(legend.position = "bottom") +
+  geom_text(data = centers, aes(x = long, y = lat, label = abbr),
+            inherit.aes = FALSE, size = 3, color = "black")
+
+
+gp2 <- ggplotly(map2, tooltip = "text")
+text_traces <- which(sapply(gp2$x$data, `[[`, "mode") == "text")
+if (length(text_traces)) gp2 <- style(gp2, hoverinfo = "skip", traces = text_traces)
+
+gp2 <- gp2 %>% layout(legend = list(orientation = "h", x = 0.5, xanchor = "center", y = -0.08))
+gp2
+
+
+
+```
+
+Graduations rates and grant aids{data-orientation=rows}
+===================================== 
+
+```{r}
+library(shiny)
+library(forcats)
+
+data_long <- data %>%
+  dplyr::select(State, Grad_rate, pell_grad_rate, Pro_pell,
+                Pell = Ave_Pell_grant,
+                `other federal grant aid` = Ave_fed_grant,
+                `state/local grant aid`   = Ave_state.local_grant) %>%
+  tidyr::pivot_longer(cols = c(Pell, `other federal grant aid`, `state/local grant aid`),
+                      names_to = "AidType", values_to = "AidAmount")
+
+```
+Column {.sidebar}
+-----------------------------------------------------------------------
+```{r}
+radioButtons(
+  "outcome", "Outcome:",
+  choices = c("Overall graduation rate" = "Grad_rate",
+              "Pell student graduation rate" = "pell_grad_rate"),
+  selected = "Grad_rate"
+)
+checkboxGroupInput(
+  "types", "Aid Type(s):",
+  choices  = c("other federal grant aid","Pell","state/local grant aid"),
+  selected = c("other federal grant aid","Pell","state/local grant aid")
+)
+checkboxInput("showsmooth", "regression line", TRUE)
+sliderInput("alpha", "transparency", min=0.1, max=1, value=0.35, step=0.05)
+```
+
+Column
+-----------------------------------------------------------------------
+### Associations Between Grant Aid Types and Graduation Rates
+```{r}
+renderPlot({
+  req(input$types, input$outcome)
+  df <- dplyr::filter(data_long, AidType %in% input$types)
+
+  if (input$outcome == "pell_grad_rate") {
+    df <- df %>%
+      dplyr::filter(pell_grad_rate >= 0.01, pell_grad_rate <= 0.99)
+  }
+  
+  yvar <- input$outcome
+  ylab <- if (yvar == "Grad_rate") "Graduation rate"
+          else "Pell student graduation rate"
+
+  ggplot(df, aes(AidAmount, .data[[yvar]], color = AidType)) +
+    geom_point(alpha = input$alpha) +
+    { if (isTRUE(input$showsmooth))
+        geom_smooth(method = "lm", se = TRUE, aes(color = AidType))
+      else NULL } +
+    scale_x_continuous(labels = scales::dollar_format()) +
+    scale_color_manual(values = c(
+      "other federal grant aid" = "#fb6a4a",
+      "Pell"                    = "#31a354",
+      "state/local grant aid"   = "#6baed6"
+    )) +
+    labs(x = "Grant Amount ($)", y = ylab,
+         color = "Aid Type",
+         caption = "Data source: Colleges cored 2022–23 PP and IPEDS 2022–23") +
+    theme_minimal(base_size = 12) +
+    theme(plot.caption = element_text(hjust = 0))
+}, res = 110)
+```
+
+
+
+
+Distributions & Associations
+===================================== 
+
+Row
+------- 
+### The Relationship Between Federal–State Grant Gap and Graduation Rate
+
+```{r}
+gap_df2 <- gap_df %>%
+  mutate(
+    tip = paste0(
+      "Federal − State gap: ", dollar(grant_gap), "<br>",
+      "Graduation rate: ", percent(Grad_rate, accuracy = 0.1), "<br>",
+      "Pell amount: ", dollar(Ave_Pell_grant)
+    )
+  )
+
+p_gap <- ggplot(
+  gap_df2,
+  aes(grant_gap, Grad_rate, text = tip)
+) +
+  geom_point(aes(color = Ave_Pell_grant),
+             alpha = 0.35, size = 2) +
+  
+  geom_smooth(method = "lm", se = TRUE,
+              color = "grey", fill = "lightgray",
+              linewidth = 1, inherit.aes = FALSE,
+              aes(x = grant_gap, y = Grad_rate)) +
+  scale_color_viridis_c(option = "H", direction = -1,
+                        name = "Average Pell Grant Amount") +
+  scale_x_continuous(labels = dollar_format()) +
+  labs(
+    title="Higher Reliance on Federal Aid Linked to Lower Graduation Rates",
+    x = "Difference Between Average Federal and State/Local Grant Aid ($)",
+    y = "Graduation Rate"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(legend.position = "bottom")
+
+ggplotly(p_gap, tooltip = "text") %>%
+  layout(legend = list(orientation = "h",
+                       x = 0.5, xanchor = "center"))
+
+```
