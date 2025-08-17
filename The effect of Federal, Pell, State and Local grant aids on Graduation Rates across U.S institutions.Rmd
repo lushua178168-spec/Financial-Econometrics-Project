@@ -1,0 +1,430 @@
+---
+title: "The effect of Federal, Pell, State and Local grant aids on Graduation Rates across U.S institutions"
+author: "Lulu huang"
+date: "2025-08-10"
+output: pdf_document
+---
+
+## 1.Introduction
+
+In FY2026 budget request, President Donald Trump proposed cutting approximately 163 billion in non-defense domestic spending, including substantial reductions in education funding. In early June, the Trump administration released new details outlining its vision to downsize the U.S. Department of Education. The budget proposal for fiscal year 2026 calls for a 15% funding cut to the department and a handful of changes to key K-12 and higher education programs. Specifically in higher education, the proposal seeks to lower the maximum annual amount of federal student aid from approximately 7,400 to 5,700.
+
+This study does not aim to evaluate the potential policy impacts of the Trump administration’s proposed reductions in federal education funding. This context is a background and inspiration for the topic. Grounded in the most recent data available for the 2022–2023 academic year, this proposal focuses on one core research topic: Difference between Federal, State and local grant aid appropriation on graduation rate of U.S. degree-granting institutions?
+
+Although appropriation includes both direct student aid—such as scholarship—and indirect support categorized as operating appropriations, which are typically used for school operations, research, infrastructure, and renovations, this study examines only one types of federal, state, and local appropriations—grant aid. Furthermore, special attention is given to Pell Grants—one of the most critical forms of federal student aid—as we explore how the amount of Pell Grant funding impacts graduation rates across different student groups.
+
+This report examines the relationship between different types of average grant aid-including Pell Grants, other federal grants(excluding Pell), and state/local grants-and graduation rates across U.S. degree-granting institutions, using data from 2022–2023 IPEDS and College Scorecard. In this project, I exclude private, for-profit institutions due to data quality concerns and focus only on public and private not-for-profit institutions. The data totally contains 3273 institutions.
+
+```{r setup, include=FALSE}
+library(readxl)
+setwd("D:/老电脑资料/1hll 需要啦/hll/留学信息/课程学习/t3/data visualiza/hw/proposal2/data summary")
+data <- read_excel("data_clean.xlsx")
+library(dplyr)
+library(broom)
+library(tidyr)
+library(tinytex)
+library(purrr)
+library(knitr)
+library(ggpubr)
+library(tidyverse)
+library(ggplot2)
+library(RColorBrewer)
+library(ggcorrplot)
+library(scales)
+library(maps)
+```
+
+## 2.Definition
+
+Federal Pell Grants usually are awarded only to undergraduate students who display exceptional financial need and have not earned a bachelor's, graduate, or professional degree.Students will have to fill out the FAFSA form every year and Schools use the information on the FAFSA form to determine students eligibility for a Pell Grant, and if so, how much students are eligible to receive. They subtract your SAI from your COA to determine the amount of your financial need and how much need-based aid you can get. To determine how much non-need-based aid you can get, the school takes your cost of attendance and subtracts any financial aid you’ve already been awarded. Amounts can change yearly. The maximum Federal Pell Grant award is /\$7,395 for the 2025–26 award year and /\$6895 for the 2022-2023 award year. The amount of any other student aid for which a student might qualify does not affect the amount of his Federal Pell Grant.
+
+Other federal grant aid includes any federal grant assistance received by the student other than Pell Grants, regardless of the source within the federal government. These may include merit-based or need-based federal grants, such as:FSEOG(Federal Supplemental Educational Opportunity Grant),TEACH Grant (Teacher Education Assistance for College and Higher Education),Iraq and Afghanistan Service Grant,Veterans’ education benefits (VA-funded programs, if reported as grants).
+
+State/local grant aid refers to all grant aid funded by state governments, local governments, or territories.This includes both need-based and merit-based grants, and funds from state-funded scholarship programs (such as Georgia HOPE, California Cal Grant, New York TAP, etc.).Institutional grants funded by the state but administered by colleges are also included here. \## 3.Descriptions Analysis
+
+## 3.Descriptions Analysis
+## 3.1 Distribution of Grant Aid
+
+By creating boxplots of the average amounts of Pell, other federal, and state,local grant aid, we observe clear differences in the distribution patterns across the three types of aid.
+
+The distribution of Pell Grant aid is the most concentrated, indicating that the federal government provides Pell Grants in a relatively standardized manner. Other federal grants show some higher outliers, but most institutions receive amounts within the \$5,000–\$7,000 range. In contrast, state/local grant aid exhibits the widest variation. While a few institutions receive very high levels of state or local aid, the majority receive relatively low amounts, reflecting significant disparities in funding support across different states and localities.
+
+```{r description_aid, echo=FALSE, message=FALSE, warning=FALSE}
+data_long <- data %>%
+  select(grad_rate = Grad_rate,
+         pell = Ave_Pell_grant,
+         other_federal = Ave_fed_grant,
+         state_local = `Ave_state/local_grant`) %>%
+  pivot_longer(cols = c(pell, other_federal, state_local),
+               names_to = "grant_type",
+               values_to = "grant_amount")
+
+grant_labels <- c(
+  pell = "Pell grant aid",
+  other_federal = "other federal grant aid",
+  state_local = "state/local grant aid"
+)
+
+
+ggplot(data_long, aes(x = grant_type, y = grant_amount, fill = grant_type)) +
+  geom_boxplot() +
+  stat_summary(fun = median, geom = "text", aes(label = round(..y.., 0)), 
+               ,vjust=-1.3,hjust = -1, color = "black", size = 3.5) +
+  scale_x_discrete(labels = grant_labels) +
+  theme_minimal() +
+  labs(
+    title = "Comparison of Grant Amounts by Aid Type",
+    x = "",
+    y = "Grant Amount ($)",
+    fill = "Type of Grant",
+    caption = "Data source: Colleges cored 2022-23 PP and IPEDS 2022-23"
+  ) +
+  theme(plot.caption = element_text(hjust = 0, size = 9, face = "italic"),
+         legend.position = "none")
+
+```
+
+## 3.2 State and Federal Grant Distribution Across U.S. States
+
+Figure 1 shows the average amount of state/local financial aid provided to higher education students across U.S. states. Figure 2 illustrates each state’s reliance on federal aid, revealing which states depend more on federal funding and which rely more on their own financial resources. We can observe that states with higher state/local grant aid tend to rely less on other federal grant aid.
+
+Southern and central states — such as Alabama, Mississippi, Arkansas, and Louisiana — appear in deep red in Figure 2, indicating that federal aid significantly exceeds state/local contributions in these areas.
+
+In contrast, coastal states like California, New Jersey, and New York appear in green or near-neutral colors, suggesting that these states primarily fund higher education through their own state and local budgets.
+
+```{r description_map, echo=FALSE, message=FALSE, warning=FALSE}
+us_states <- map_data("state")
+
+data_map <- data %>%
+  group_by(State) %>%
+  summarise(
+    ave_state_local_grant = mean(`Ave_state/local_grant`, na.rm = TRUE),
+    ave_diff_grant = mean(`Ave_state/local_grant` - Ave_fed_grant, na.rm = TRUE)
+  ) %>%
+  mutate(region = tolower(State))
+
+us_map <- us_states %>%
+  left_join(data_map, by = "region")
+
+state_labels <- data.frame(
+  region = tolower(state.name),  
+  abb = state.abb,               
+  x = state.center$x,             
+  y = state.center$y            
+)
+
+state_labels <- state_labels %>%
+  mutate(
+    x = case_when(
+      abb == "CT" ~ x + 0.5,
+      abb == "RI" ~ x + 0.8,
+      abb == "NJ" ~ x + 0.4,
+      abb == "DC" ~ x + 0.5,
+      abb == "DE" ~ x + 0.5,
+      TRUE ~ x
+    ),
+    y = case_when(
+      abb == "CT" ~ y + 0.2,
+      abb == "RI" ~ y - 0.2,
+      abb == "NJ" ~ y - 0.1,
+      TRUE ~ y
+    )
+  )
+  
+ggplot(us_map, aes(x = long, y = lat, group = group, fill = ave_state_local_grant)) +
+  geom_polygon(color = "white") +
+  geom_text(data = state_labels, aes(x = x, y = y, label = abb),
+            color = "black", size = 2.5, inherit.aes = FALSE) +
+  coord_fixed(1.3) +
+  scale_fill_gradient(
+    name = "State/Local Grant",
+    low = "#ffffcc", high = "#006837",
+    na.value = "grey90", labels = dollar_format()
+  ) +
+  labs(
+    title = "Average State/Local Grant Aid by State",
+    caption = "Data source: IPEDS"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.caption = element_text(hjust = 0),
+    legend.position = "bottom"
+  )
+
+```
+
+```{r description_map2, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(us_map, aes(x = long, y = lat, group = group, fill = ave_diff_grant)) +
+  geom_polygon(color = "white") +
+  geom_text(data = state_labels, aes(x = x, y = y, label = abb),
+            color = "black", size = 2.5, inherit.aes = FALSE) +
+  coord_fixed(1.3) +
+  scale_fill_gradient2(
+    name = "Difference: State/Local - Federal",
+    low = "#d73027", mid = "white", high = "#1a9850",
+    midpoint = 0, na.value = "grey90", labels = dollar_format()
+  ) +
+  labs(
+    title = "Difference in Aid: State/Local minus Federal",
+    caption = "Data source: IPEDS"
+  ) +
+  theme_void() +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    plot.caption = element_text(hjust = 0),
+    legend.position = "bottom"
+  )
+```
+
+## 3.3 Relationships between different types of Grant Aid
+
+The scatter plot visualizes the relationships between three types of grant aid. Schools receiving higher Pell grants (green dots) are often located in the upper part of the chart and also receive larger amounts of other federal grant aid as well, indicating stronger overall federal support. In contrast, average amount of State and Local grant aid does not exhibit a strong relationship with either Pell grants or other federal grants. This suggests that the two types of funding may follow distinct allocation mechanisms, and are not tightly correlated.
+
+```{r description_aid_structure, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(data, aes(x = `Ave_state/local_grant`, y = Ave_fed_grant)) +
+  geom_point(aes(size = Grad_rate, color = Ave_Pell_grant, alpha = 0.3)) +
+  scale_size(range = c(1, 8), name = "Graduation Rate") +
+  scale_color_gradientn(colours = brewer.pal(9, "RdYlGn"), name = "Average amount of \nPell grant aid($)", na.value = "white") +
+  labs(title = paste("Distribution Between Different Types of Grant Aid "),
+       x = "Average amount of state/local grant aid($)",
+       y = "Average amount of other federal grant aid($)",
+       caption = "Data source: Colleges cored 2022-23 PP and IPEDS 2022-23") +
+  theme_minimal() +
+  theme(plot.title = element_text(size=12, hjust=0.5))
+```
+
+To further investigate the relationships between the different forms of financial aid, Figure 3 displays the correlation matrix among the three types of grants. The results confirm the preliminary inference from Figure 2. The average amount of Pell grant aid is positively correlated with the average amount of other federal grant aid, while both have weak correlations with the average amount of state and local grant aid.
+
+These visualizations suggest that federal and state,local aid distribution patterns are relatively independent. If federal government reduces the amount of federal grant aid, state and local governments may not increase their contributions to compensate for the gap. This raises an another important concern:If the gap continues to widen, how might this affect the graduation rate.
+
+```{r description_correlation, echo=FALSE, message=FALSE, warning=FALSE}
+cor_data <- data %>%
+  select(`Ave_state/local_grant`, Ave_fed_grant, Ave_Pell_grant)
+colnames(cor_data) <- c("State/Local Grant", "Other Federal Grant", "Pell Grant")
+cor_matrix <- cor(cor_data, use = "complete.obs")
+
+ggcorrplot(cor_matrix,
+           method = "square",               
+           type = "lower",                 
+           lab = TRUE,                     
+           lab_size = 6,                   
+           colors = c("red","white", "lightgreen"),  
+           outline.col = "gray90",         
+           ggtheme = theme_minimal(),     
+           title = paste("Correlation Between Types of Grant Aid")
+           ) +
+  theme(plot.title = element_text(hjust = 0.5, size = 12))+
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5, hjust = 0.5))+
+  labs(caption="Data source: Colleges cored 2022-23 PP and IPEDS 2022-23")
+
+
+```
+
+## 3.4 Graduation Rate Patterns
+
+Figure 4 compares the distribution of graduation rates between all students and Pell Grant recipients. Both groups have a median graduation rate of 47%, and the interquartile ranges and outlier patterns are quite similar. This suggests that, on average, Pell recipients graduate at similar rates to the general student population. It may due to the role of Pell Grant aid in reducing graduation disparities and providing financial support to low-income students. However, this is only a descriptive comparison, we cannot draw a conclusion from this figure alone, and further research is needed to explore the underlying factors in more depth.
+
+```{r description_graduation, echo=FALSE, message=FALSE, warning=FALSE}
+grad_long <- data %>%
+  select(overall = Grad_rate,
+         pell = pell_grad_rate
+         ) %>%
+  pivot_longer(cols = c(overall, pell),
+               names_to = "grad_type",
+               values_to = "rate")
+
+grad_labels <- c(
+  overall = "Overall Graduation Rate",
+  pell = "Pell Student Graduation Rate"
+)
+
+ggplot(grad_long, aes(x = grad_type, y = rate, fill = grad_type)) +
+  geom_boxplot() +
+  stat_summary(fun = median, geom = "text", aes(label = round(..y.., 2)),
+               vjust = -0.7, color = "black", size = 3.5) +
+  scale_x_discrete(labels = grad_labels) +
+  theme_minimal() +
+  labs(
+    title = "Comparison of Graduation Rate and Pell Graduation Rate",
+    x = "",
+    y = "Graduation Rate",
+    caption = "Data source: Colleges cored 2022-23 PP and IPEDS 2022-23"
+  ) +
+  theme(plot.caption = element_text(hjust = 0, size = 9, face = "italic"),
+         legend.position = "none")
+  
+
+```
+
+## 4. Regression Analysis
+
+## 4.1 Separate Regressions by Aid Type
+
+The distribution of average amount of Pell Grants and other federal grant aid is tightly clustered around 5,000, suggesting limited variation in average aid amounts across institutions. By contrast, average amount of state/local grants show a more dispersed distribution, with most schools receiving less than 5,000, and fewer institutions receiving larger amounts.
+
+Although Pell Grant amounts show little correlation with overall graduation rates, both other federal and state/local grant aid demonstrate a clearer positive association with institutional graduation outcomes.
+
+```{r fig_grantaid, echo=FALSE, message=FALSE, warning=FALSE}
+
+
+ggplot(data_long, aes(x = grant_amount, y = grad_rate)) +
+  geom_point(alpha = 0.2, color = "darkgreen") +
+  geom_smooth(method = "lm", color = "black") +
+  facet_wrap(~grant_type, scales = "free_x", labeller = as_labeller(grant_labels)) +
+  labs(x = NULL,
+       y = "Graduation rates",
+       title = "Associations Between Grant Aid Types and Graduation Rates",
+       caption = "Data source: Colleges cored2022-23 PP and IPEDS 2022-23") + scale_x_continuous(limits = c(0, 15000))+
+theme_minimal()
+```
+
+```{r linear, echo=FALSE, message=FALSE, warning=FALSE}
+model_results <- data_long %>%
+  group_by(grant_type) %>%
+  nest() %>%
+  mutate(
+    model = purrr::map(data, ~lm(grad_rate ~ grant_amount, data = .x)),
+    tidied = purrr::map(model, ~broom::tidy(.x)),
+    glanced = purrr::map(model, ~broom::glance(.x))
+  )
+
+
+coef_table <- model_results %>%
+  unnest(tidied) %>%
+  filter(term == "grant_amount") %>%
+  left_join(
+    model_results %>% select(grant_type, glanced) %>% unnest(glanced) %>% select(grant_type, r.squared),
+    by = "grant_type"
+  ) %>%
+  select(grant_type, estimate, std.error, p.value, r.squared) %>%
+  rename(
+    Grant_Type = grant_type,
+    Slope_Coefficient = estimate,
+    Std_Error = std.error,
+    P_value = p.value,
+    R_squared = r.squared
+  )
+
+# 打印表格
+knitr::kable(coef_table, caption = "Coefficients from Linear Regression on Raw Grant Amounts")
+
+```
+
+## 4.1.1 Log Transformation and Model Estimates
+
+Because the distribution of the average amount of state and local grant aid is highly right-skewed, we applied a log transformation to reduce the impact of extreme values and better meet the assumptions of linear regression. The resulting plots show similar distributional patterns to those in the original graph.
+
+Based on linear regression, all three types of grant aid show positive associations with graduation rates. Among them, other federal grant aid has the strongest impact, followed by state/local grants, while Pell Grants have the weakest influence.
+
+This may be because Pell grant mainly affects the group of its recipients and has a relatively significant impact on those populations.
+
+```{r plot2, echo=FALSE, message=FALSE, warning=FALSE}
+data_long <- data_long %>%
+  mutate(log_grant = log(grant_amount + 1)) 
+ggplot(data_long, aes(x = log_grant, y = grad_rate)) +
+  geom_point(alpha = 0.2, color = "darkblue") +
+  geom_smooth(method = "lm", color = "black") +
+  facet_wrap(~grant_type, scales = "free_x", labeller = as_labeller(grant_labels)) +
+  labs(x = "Log of Grant Amount",
+       y = "Graduation Rate",
+       title = "Associations Between Log-Transformed Grant Aid and Graduation Rate",
+       caption = "Data source: Colleges cored2022-23 PP and IPEDS 2022-23") + scale_x_continuous(limits = c(5, 10))+
+theme_minimal()
+
+
+```
+
+```{r regression 2, echo=FALSE,message=FALSE, warning=FALSE}
+
+data_long <- data_long %>%
+  mutate(log_grant = log(grant_amount + 1)) 
+
+log_model_table <- data_long %>%
+  group_by(grant_type) %>%
+  nest() %>%
+  mutate(
+    model = purrr::map(data, ~ lm(grad_rate ~ log_grant, data = .x)),
+    tidy_model = purrr::map(model, broom::tidy),
+    glance_model = purrr::map(model, broom::glance),
+    r_squared = purrr::map_dbl(glance_model, ~ .x$r.squared)
+  ) %>%
+  unnest(tidy_model) %>%
+  filter(term == "log_grant") %>%
+  select(grant_type, estimate, std.error, p.value, r_squared) %>%
+  rename(
+    Grant_Type = grant_type,
+    Slope_Coefficient = estimate,
+    Std_Error = std.error,
+    P_value = p.value,
+    R_squared = r_squared
+  )
+
+knitr::kable(log_model_table, caption = "Coefficients from Log-Transformed Grant Amount Regression")
+
+
+```
+
+## 4.2 Targeted Effect of Pell Grant on Pell Students
+
+Interestingly, when we run a regression of Pell recipient graduation rates on log of average Pell aid, the coefficient is 0.11, which is much larger than that of overall graduation rates. This suggests that Pell aid is more effective for its target recipient group than for the entire student population.
+
+```{R regression2, echo=FALSE}
+library(tidyverse)
+
+model2 <- lm(pell_grad_rate ~ log(Ave_Pell_grant), data = data)
+
+tidy_model <- tidy(model2)
+
+kable(tidy_model, caption = "Effect of Log amounts of Pell grant aid on Pell Graduation Rate")
+```
+
+## 4.3 Impact of Allocation of Federal and State/Local Grant Aid on Graduation Rates
+
+There is a clear negative correlation between the difference in average federal and state/local grant aid and graduation rates. This indicates that schools where average federal aid exceeds state/local aid tend to have lower graduation rates. In other words, institutions that rely more heavily on federal grant aid are more likely to have lower graduation outcomes.
+
+On the right side of the graph—where average federal aid is significantly higher than state/localaid—there are many green and blue dots representing schools with high average Pell Grant aid. However, these dots are clustered in areas with lower graduation rates, suggesting that although federal aid supports disadvantaged students, these students still face greater challenges in completing their degrees.
+
+Notably, schools with lower proportions of Pell Grant recipients tend to have higher graduation rates. In contrast, institutions with a larger share of Pell students are often associated with lower graduation outcomes.
+
+```{r impact, echo=FALSE, message=FALSE, warning=FALSE}
+library(viridis)
+
+data <- data %>%
+  mutate(aid_diff = Ave_fed_grant - `Ave_state/local_grant`)
+
+data <- data %>%
+  mutate(group = ifelse(aid_diff >= 0,  "Federal > State/Local", 
+                        "Federal < State/Local"))
+
+ggplot(data, aes(x = aid_diff, y = Grad_rate, color = Ave_Pell_grant,size = Pro_pell)) +
+  geom_point(alpha = 0.3, stroke = 0, shape = 16) +
+  geom_smooth(method = "lm",se = TRUE,color = "grey",fill = "lightgray", linewidth = 1) +
+  scale_color_viridis_c(option = "H", name = "Average Pell Grant Amount", direction = -1) +
+  scale_size(range = c(1, 4), name = "Proportion of Pell Grant recipients") +
+  labs(
+    title = "The Relationship Between Federal-State Grant Gap and Graduation Rate",
+    x = "Difference Between Average Federal and State/Local Grant Aid ($)",
+    y = "Graduation Rate",
+    caption = "Source: IPEDS and College Scorecard, 2022–2023"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    legend.position = "bottom",    
+  legend.title = element_text(size = 9),
+  legend.text = element_text(size = 8),
+  plot.title = element_text(face = "plain", hjust = 0.5, size = 13),
+  axis.title = element_text(face = "plain", size = 10))
+
+
+```
+
+## 5.Conlusion
+
+Drawing on institution-level IPEDS micro-data for 2022-23, this paper investigates the channels through which three major grant programs—Pell Grants, other federal aid, and state or local appropriations—shape baccalaureate completion. Descriptive evidence shows that federal awards are strikingly standardized: both Pell Grants and non-Pell federal grants cluster tightly around an average of roughly \$5 000 per student, whereas state and local aid displays a markedly wider interquartile range and a pronounced upper tail. The tight co-movement between Pell and other federal funds indicates that campuses enrolling larger proportions of low-income students systematically attract multiple federal streams, yet those same institutions do not receive commensurate support from state treasuries, because state and local allocations are virtually uncorrelated with federal flows.
+
+Regression analysis reinforces the descriptive picture. In linear models, incremental dollars of non-Pell federal aid and of state or local aid are each associated with significantly higher institutional graduation rates, while unconditional Pell dollars have no measurable aggregate effect. Once the outcome is restricted to the graduation rate of Pell recipients themselves, however, Pell aid emerges as a positive and highly significant predictor, confirming its targeted efficacy for low-income cohorts. Log-linear specifications reveal diminishing marginal returns across all three streams but preserve the ordering of effect sizes: other federal aid exerts the strongest influence, followed by state or local aid, then Pell. A final specification that replaces the three separate variables with the federal–state aid differential shows a clear penalty for campuses whose operating budgets rely disproportionately on Washington rather than on their own state governments; these colleges exhibit both lower overall completion and higher concentrations of Pell recipients.
+
+Taken together, the results suggest that federal equity programmes cannot fully compensate for uneven state effort. Sustaining and modestly expanding the Pell programme is necessary to protect low-income students, yet the largest gains in overall completion are likely to come from two complementary policies: continued growth in specialised federal grants that finance instructional quality and student services, and a federal matching mechanism that rewards states for investing in high-Pell institutions. Aligning state appropriations with federal objectives would narrow cross-state resource gaps and, by extension, their graduation-rate gaps, thereby advancing both efficiency and equity in U.S. higher education.
+
+**Data source**: U.S. Department of Education, Integrated Postsecondary Education Data System (IPEDS), 2022–2023, Colleges_cored2022_23_PP
